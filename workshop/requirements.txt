@@ -1,0 +1,12 @@
+# Workshop platform dependencies
+# Install: pip install -r requirements.txt
+
+# No external dependencies required - stdlib only
+# sqlite3: built-in
+# argparse: built-in
+# json: built-in
+# pathlib: built-in
+# datetime: built-in
+# subprocess: built-in
+# csv: built-in
+# textwrap: built-in

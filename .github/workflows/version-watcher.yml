@@ -1,0 +1,64 @@
+name: Claude Code Version Watcher
+
+on:
+  schedule:
+    - cron: '0 8 * * *'  # Daily at 8 AM UTC
+  workflow_dispatch:  # Manual trigger
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Check for new Claude Code version
+        id: check
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          chmod +x workshop/scripts/check-claude-version.sh
+          workshop/scripts/check-claude-version.sh || true
+
+      - name: Create update PR
+        if: steps.check.outputs.impacted == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          BRANCH="auto/claude-code-${{ steps.check.outputs.new_version }}"
+          git checkout -b "$BRANCH"
+
+          git add workshop/.version-tracker
+          git commit -m "chore(workshop): update Claude Code version tracker to ${{ steps.check.outputs.new_version }}"
+          git push origin "$BRANCH"
+
+          gh pr create \
+            --title "Workshop update for Claude Code ${{ steps.check.outputs.new_version }}" \
+            --body "## Claude Code Version Update
+
+          New version: **${{ steps.check.outputs.new_version }}**
+
+          ### Impacted Sessions
+          ${{ steps.check.outputs.sessions }}
+
+          ### Required Changes
+          - ${{ steps.check.outputs.changes }}
+
+          ---
+          *This PR was automatically created by the version watcher.*" \
+            --label "workshop,auto-update"
