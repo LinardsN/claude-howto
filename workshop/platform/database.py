@@ -32,6 +32,8 @@ CREATE TABLE IF NOT EXISTS session_progress (
     completed_at TEXT,
     gate_passed INTEGER DEFAULT 0,
     gate_details TEXT,
+    attempt_count INTEGER DEFAULT 0,
+    auto_unlocked INTEGER DEFAULT 0,
     PRIMARY KEY (student_id, session_number)
 );
 
@@ -169,10 +171,32 @@ def complete_session(conn: sqlite3.Connection, student_id: str,
                      gate_details: dict) -> None:
     conn.execute(
         """UPDATE session_progress
-           SET completed_at = ?, gate_passed = ?, gate_details = ?
+           SET completed_at = ?, gate_passed = ?, gate_details = ?,
+               attempt_count = attempt_count + 1
            WHERE student_id = ? AND session_number = ?""",
         (_now(), int(gate_passed), json.dumps(gate_details),
          student_id, session_number),
+    )
+    conn.commit()
+
+
+def get_attempt_count(conn: sqlite3.Connection, student_id: str,
+                      session_number: int) -> int:
+    row = conn.execute(
+        """SELECT attempt_count FROM session_progress
+           WHERE student_id = ? AND session_number = ?""",
+        (student_id, session_number),
+    ).fetchone()
+    return row["attempt_count"] if row else 0
+
+
+def mark_auto_unlocked(conn: sqlite3.Connection, student_id: str,
+                       session_number: int) -> None:
+    conn.execute(
+        """UPDATE session_progress
+           SET gate_passed = 1, auto_unlocked = 1
+           WHERE student_id = ? AND session_number = ?""",
+        (student_id, session_number),
     )
     conn.commit()
 

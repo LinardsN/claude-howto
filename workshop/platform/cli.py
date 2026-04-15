@@ -265,14 +265,101 @@ def cmd_complete_session(conn, args) -> int:
         else:
             print("  Congratulations! You have completed all sessions!")
             print("  Run: ./bootcamp status --detailed")
-    else:
-        print(f"\n  CRITICAL checks failed — these must pass to proceed:")
-        for check in results:
-            if not check["passed"] and check.get("critical", True):
-                print(f"    [-] {check['message']}")
-        print(f"\n  Fix the issues and retry: ./bootcamp complete-session {session}")
+        return 0
 
-    return 0 if gate_passed else 1
+    # --- Gate failed: escalating response based on attempt count ---
+    from .config import AUTO_UNLOCK_ATTEMPT, AUTO_UNLOCK_PENALTY, HINT_ESCALATION_ATTEMPT
+
+    attempts = db.get_attempt_count(conn, student_id, session)
+    failed_critical = [c for c in results
+                       if not c["passed"] and c.get("critical", True)]
+
+    print(f"\n  Attempt {attempts}/{AUTO_UNLOCK_ATTEMPT} "
+          f"— {len(failed_critical)} critical check(s) failed:")
+
+    for check in failed_critical:
+        print(f"    [-] {check['message']}")
+
+    # Escalation level 1: basic feedback (attempts 1-2)
+    if attempts < HINT_ESCALATION_ATTEMPT:
+        print(f"\n  Fix the issues and retry: ./bootcamp complete-session {session}")
+        remaining = AUTO_UNLOCK_ATTEMPT - attempts
+        print(f"  ({remaining} more attempts before auto-unlock with score penalty)")
+
+    # Escalation level 2: detailed hints (attempts 3-4)
+    elif attempts < AUTO_UNLOCK_ATTEMPT:
+        print(f"\n  DETAILED HINTS (attempt {attempts}):")
+        for check in failed_critical:
+            hint = _get_hint_for_check(check["message"], session)
+            print(f"    -> {check['message']}")
+            print(f"       Hint: {hint}")
+        remaining = AUTO_UNLOCK_ATTEMPT - attempts
+        print(f"\n  Retry: ./bootcamp complete-session {session}")
+        print(f"  ({remaining} more attempt(s) before auto-unlock with "
+              f"{int(AUTO_UNLOCK_PENALTY * 100)}% score penalty)")
+
+    # Escalation level 3: auto-unlock (attempt 5+)
+    else:
+        penalty_pct = int(AUTO_UNLOCK_PENALTY * 100)
+        penalized_score = quality_score * (1 - AUTO_UNLOCK_PENALTY)
+        print(f"\n  AUTO-UNLOCKED after {attempts} attempts.")
+        print(f"  Score penalty: -{penalty_pct}% "
+              f"(session score: {penalized_score:.0f}/100 instead of {quality_score:.0f})")
+        print(f"  You can still fix issues and re-run for full credit:")
+        print(f"    ./bootcamp complete-session {session}")
+
+        # Force-pass the gate with penalty
+        db.mark_auto_unlocked(conn, student_id, session)
+        db.save_score(
+            conn, student_id, session,
+            prompt_quality=0, efficiency=0,
+            deliverable_quality=penalized_score,
+            standards_compliance=0,
+            total=penalized_score,
+        )
+
+        if session < TOTAL_SESSIONS:
+            print(f"\n  Next: ./bootcamp start-session {session + 1}")
+        return 0
+
+    return 1
+
+
+# Hints for common gate failures — helps students self-diagnose
+_HINTS = {
+    "package.json": "Ask Claude to initialize a Node.js project with Express and React",
+    "express": "Your package.json needs Express as a dependency — ask Claude to add it",
+    "react": "Your package.json needs React — ask Claude to set up a Vite + React frontend",
+    "CLAUDE.md": "Run /init to create a CLAUDE.md, or ask Claude to create one with your QA standards",
+    "rules": "Create a .claude/rules/ directory and add at least one rule file for your project",
+    "SKILL.md": "Create .claude/skills/<name>/SKILL.md with YAML frontmatter (--- name, description ---)",
+    "skills": "Your skills need a YAML frontmatter block with at least a 'description' field for auto-invocation",
+    "agents": "Create .claude/agents/<name>.md with YAML frontmatter (--- description, tools ---)",
+    "frontmatter": "YAML frontmatter starts with --- on line 1, has key: value pairs, ends with ---",
+    ".mcp.json": "Run 'claude mcp add' to configure a server, or create .mcp.json manually",
+    "github": "Add the GitHub MCP server: claude mcp add github -- npx @modelcontextprotocol/server-github",
+    "jira": "Add the Atlassian MCP server for Jira integration — see the session reference guide",
+    "atlassian": "Configure the Atlassian MCP with your Jira Cloud URL and API token",
+    "settings.json": "Create .claude/settings.json with hook configurations — see the template in workshop/templates/",
+    "hook": "Your settings.json needs a 'hooks' object with event names like PreToolUse, PostToolUse, Stop",
+    "plugin": "Create .claude-plugin/plugin.json — see the template in workshop/templates/sample-plugin-json.json",
+    "csv": "Ask Claude to add CSV import/export — consider a library like papaparse or fast-csv",
+    "setting": "Ask Claude to build a settings page with form fields for your preferences",
+    "ci": "Ask Claude to create a .github/workflows/ directory with a CI/CD YAML file",
+    "navigation": "Ask Claude to add React Router for page navigation with a sidebar or navbar",
+    "responsive": "Ask Claude to add responsive CSS with media queries or a CSS grid layout",
+    "chart": "Ask Claude to add a chart library (Recharts or Chart.js) to your dashboard",
+}
+
+
+def _get_hint_for_check(message: str, session: int) -> str:
+    """Return a helpful hint for a failed gate check message."""
+    message_lower = message.lower()
+    for keyword, hint in _HINTS.items():
+        if keyword.lower() in message_lower:
+            return hint
+    return (f"Check the deliverables list in "
+            f"workshop/sessions/s{session:02d}-*/deliverables.md for details")
 
 
 def _basic_gate_check(session: int, project_dir: Path) -> list[dict]:

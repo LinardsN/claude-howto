@@ -51,3 +51,8 @@ GRADE_BANDS = [
 
 # Hook settings template path
 HOOKS_SETTINGS_TEMPLATE = HOOKS_DIR / "hooks-settings.json"
+
+# Auto-unlock settings
+HINT_ESCALATION_ATTEMPT = 3   # Show detailed hints after this many failed attempts
+AUTO_UNLOCK_ATTEMPT = 5       # Auto-unlock after this many failed attempts
+AUTO_UNLOCK_PENALTY = 0.20    # 20% score penalty for auto-unlocked sessions
