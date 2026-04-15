@@ -325,41 +325,45 @@ def cmd_complete_session(conn, args) -> int:
     return 1
 
 
-# Hints for common gate failures — helps students self-diagnose
+# Hints for common gate failures — nudge thinking, don't give answers
 _HINTS = {
-    "package.json": "Ask Claude to initialize a Node.js project with Express and React",
-    "express": "Your package.json needs Express as a dependency — ask Claude to add it",
-    "react": "Your package.json needs React — ask Claude to set up a Vite + React frontend",
-    "CLAUDE.md": "Run /init to create a CLAUDE.md, or ask Claude to create one with your QA standards",
-    "rules": "Create a .claude/rules/ directory and add at least one rule file for your project",
-    "SKILL.md": "Create .claude/skills/<name>/SKILL.md with YAML frontmatter (--- name, description ---)",
-    "skills": "Your skills need a YAML frontmatter block with at least a 'description' field for auto-invocation",
-    "agents": "Create .claude/agents/<name>.md with YAML frontmatter (--- description, tools ---)",
-    "frontmatter": "YAML frontmatter starts with --- on line 1, has key: value pairs, ends with ---",
-    ".mcp.json": "Run 'claude mcp add' to configure a server, or create .mcp.json manually",
-    "github": "Add the GitHub MCP server: claude mcp add github -- npx @modelcontextprotocol/server-github",
-    "jira": "Add the Atlassian MCP server for Jira integration — see the session reference guide",
-    "atlassian": "Configure the Atlassian MCP with your Jira Cloud URL and API token",
-    "settings.json": "Create .claude/settings.json with hook configurations — see the template in workshop/templates/",
-    "hook": "Your settings.json needs a 'hooks' object with event names like PreToolUse, PostToolUse, Stop",
-    "plugin": "Create .claude-plugin/plugin.json — see the template in workshop/templates/sample-plugin-json.json",
-    "csv": "Ask Claude to add CSV import/export — consider a library like papaparse or fast-csv",
-    "setting": "Ask Claude to build a settings page with form fields for your preferences",
-    "ci": "Ask Claude to create a .github/workflows/ directory with a CI/CD YAML file",
-    "navigation": "Ask Claude to add React Router for page navigation with a sidebar or navbar",
-    "responsive": "Ask Claude to add responsive CSS with media queries or a CSS grid layout",
-    "chart": "Ask Claude to add a chart library (Recharts or Chart.js) to your dashboard",
+    "package.json": "A Node.js project starts somewhere. What file does npm look for first?",
+    "express": "You're building a 'full-stack' app. What's on the backend? What serves your API?",
+    "react": "Your frontend framework was mentioned in the session goals. What tool scaffolds it fast?",
+    "CLAUDE.md": "Claude needs persistent context about YOUR project. Where does that live?",
+    "rules": "CLAUDE.md is one file. What if different parts of your project have different rules?",
+    "SKILL.md": "A skill is more than just a file name — what makes Claude auto-invoke it? Where do skills live?",
+    "skills": "Auto-invocation depends on metadata. What structure at the top of a markdown file holds metadata?",
+    "agents": "Agents are specialists. How does Claude know what a specialist does and what tools they can use?",
+    "frontmatter": "This is a YAML concept. Look at an existing skill in 03-skills/ — what bracket the metadata?",
+    ".mcp.json": "MCP connects Claude to external services. How do you tell Claude which services and where?",
+    "github": "You need Claude to talk to GitHub. Is there an MCP server for that? Where would you find it?",
+    "jira": "Jira is an Atlassian product. Is there a pattern for how Atlassian MCP servers are configured?",
+    "atlassian": "Atlassian Cloud needs authentication. What credential does the API require, and where does it go?",
+    "settings.json": "Hooks need to be registered somewhere Claude reads on startup. Which config file?",
+    "hook": "Hooks respond to events. What events can you intercept? Which one fires before a tool runs?",
+    "plugin": "A plugin bundles things. What manifest format describes what's inside a plugin?",
+    "csv": "Parsing CSV reliably is tricky — edge cases everywhere. Is there a well-known library for this?",
+    "setting": "User preferences need to persist. Where do they live, and how do they load on startup?",
+    "ci": "Automation runs when events happen in your repo. What's GitHub's native automation system?",
+    "navigation": "SPAs need routing without full page reloads. What's the standard React library for that?",
+    "responsive": "Responsive design adapts to screen size. What CSS feature queries screen dimensions?",
+    "chart": "Dashboards need visualizations. What charting libraries integrate well with React?",
+    "test case": "A test case has a structure: what fields does every ISTQB test case need?",
+    "bug": "A bug report should be actionable. What fields would a developer need to fix it?",
+    "severity": "ISTQB defines severity levels. How many, and what do they represent?",
+    "dashboard": "A dashboard summarizes. What metrics matter most for a QA team at a glance?",
 }
 
 
 def _get_hint_for_check(message: str, session: int) -> str:
-    """Return a helpful hint for a failed gate check message."""
+    """Return a direction-pointing hint for a failed gate check."""
     message_lower = message.lower()
     for keyword, hint in _HINTS.items():
         if keyword.lower() in message_lower:
             return hint
-    return (f"Check the deliverables list in "
-            f"workshop/sessions/s{session:02d}-*/deliverables.md for details")
+    return (f"Re-read the 'What You Will Build' and 'Requirements' sections in "
+            f"workshop/sessions/s{session:02d}-*/README.md — what's missing?")
 
 
 def _basic_gate_check(session: int, project_dir: Path) -> list[dict]:
