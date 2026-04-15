@@ -4,11 +4,25 @@ from pathlib import Path
 
 from .common import (
     CheckResult, bonus, dir_exists, file_contains, file_exists,
-    file_not_empty,
+    min_file_count,
 )
 
 
 def check(project_dir: Path) -> list[CheckResult]:
+    # Check rules directory has at least one file
+    rules_dir = project_dir / ".claude/rules"
+    has_rule_files = (
+        rules_dir.exists()
+        and any(f.is_file() for f in rules_dir.iterdir())
+    )
+
+    # Check for test case files
+    has_test_case_files = any(
+        "test" in f.name.lower() and "case" in f.name.lower()
+        for f in project_dir.rglob("*")
+        if f.is_file() and "node_modules" not in str(f)
+    )
+
     return [
         # CLAUDE.md exists and has content
         file_exists(project_dir, "CLAUDE.md",
@@ -19,17 +33,18 @@ def check(project_dir: Path) -> list[CheckResult]:
         # Rules directory
         dir_exists(project_dir, ".claude/rules",
                    "Rules directory exists (.claude/rules/)", 10),
-        file_not_empty(project_dir, ".claude/rules",
-                       "At least one rule file exists")
-        if (project_dir / ".claude/rules").exists()
-        and any((project_dir / ".claude/rules").iterdir())
-        else CheckResult(False, "Rules directory has rule files", 5),
+        CheckResult(
+            has_rule_files,
+            "At least one rule file in .claude/rules/",
+            5,
+        ),
 
         # Test case model/routes
-        file_contains(project_dir, ".", r"test.?case",
-                      "Test case model or route exists", 10)
-        if not any(project_dir.rglob("*test*case*"))
-        else CheckResult(True, "Test case files found", 10),
+        CheckResult(
+            has_test_case_files,
+            "Test case files exist (model or route)",
+            10,
+        ),
 
         # API routes exist
         file_contains(project_dir, "package.json", r"express",
