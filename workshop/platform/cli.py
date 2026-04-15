@@ -92,6 +92,18 @@ def main(argv: list[str] | None = None) -> int:
     grade_parser.add_argument("--no-ai", action="store_true",
                               help="Use heuristic scoring only (no AI)")
 
+    # Instructor override: unlock a session for a student
+    unlock_parser = subparsers.add_parser(
+        "unlock-session",
+        help="[Instructor] Force-unlock a session for a student (bypasses gates)",
+    )
+    unlock_parser.add_argument("session", type=int, help="Session number to unlock")
+    unlock_parser.add_argument("--student", required=True, help="Student ID")
+    unlock_parser.add_argument(
+        "--reason", default="instructor override",
+        help="Reason for override (logged for audit)",
+    )
+
     args = parser.parse_args(argv)
 
     if not args.command:
@@ -121,6 +133,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_scores(conn, args)
         elif args.command == "grade":
             return cmd_grade(conn, args)
+        elif args.command == "unlock-session":
+            return cmd_unlock_session(conn, args)
         else:
             parser.print_help()
             return 1
@@ -197,19 +211,24 @@ def cmd_complete_session(conn, args) -> int:
         # Fallback: basic gate check
         results = _basic_gate_check(session, args.project_dir)
 
-    # Display results
-    all_passed = True
+    # Display results — separate critical vs bonus checks
+    critical_passed = True
+    bonus_failed = []
     total_points = 0
     max_points = 0
 
     for check in results:
+        is_critical = check.get("critical", True)
         status = "PASS" if check["passed"] else "FAIL"
+        tag = "" if is_critical else " (bonus)"
         icon = "[+]" if check["passed"] else "[-]"
-        print(f"  {icon} {status}: {check['message']} ({check['points']} pts)")
+        print(f"  {icon} {status}: {check['message']}{tag} ({check['points']} pts)")
         if check["passed"]:
             total_points += check["points"]
+        elif is_critical:
+            critical_passed = False
         else:
-            all_passed = False
+            bonus_failed.append(check["message"])
         max_points += check["points"]
 
     print("-" * 40)
@@ -221,29 +240,39 @@ def cmd_complete_session(conn, args) -> int:
         "total_points": total_points,
         "max_points": max_points,
     }
-    db.complete_session(conn, student_id, session, all_passed, gate_details)
 
-    if all_passed:
-        # Save deliverable quality score
-        quality_score = (total_points / max_points * 100) if max_points > 0 else 0
-        db.save_score(
-            conn, student_id, session,
-            prompt_quality=0, efficiency=0,
-            deliverable_quality=quality_score,
-            standards_compliance=0,
-            total=quality_score,
-        )
-        print(f"\n  Session {session} COMPLETED!")
+    # Gate passes if all CRITICAL checks pass (bonus checks affect score only)
+    gate_passed = critical_passed
+    db.complete_session(conn, student_id, session, gate_passed, gate_details)
+
+    # Save deliverable quality score regardless
+    quality_score = (total_points / max_points * 100) if max_points > 0 else 0
+    db.save_score(
+        conn, student_id, session,
+        prompt_quality=0, efficiency=0,
+        deliverable_quality=quality_score,
+        standards_compliance=0,
+        total=quality_score,
+    )
+
+    if gate_passed:
+        print(f"\n  Session {session} COMPLETED! (score: {quality_score:.0f}/100)")
+        if bonus_failed:
+            print(f"  Note: {len(bonus_failed)} bonus check(s) missed "
+                  f"(affects score, not progression)")
         if session < TOTAL_SESSIONS:
             print(f"  Next: ./bootcamp start-session {session + 1}")
         else:
             print("  Congratulations! You have completed all sessions!")
             print("  Run: ./bootcamp status --detailed")
     else:
-        print(f"\n  Some checks failed. Fix the issues and retry:")
-        print(f"  ./bootcamp complete-session {session}")
+        print(f"\n  CRITICAL checks failed — these must pass to proceed:")
+        for check in results:
+            if not check["passed"] and check.get("critical", True):
+                print(f"    [-] {check['message']}")
+        print(f"\n  Fix the issues and retry: ./bootcamp complete-session {session}")
 
-    return 0 if all_passed else 1
+    return 0 if gate_passed else 1
 
 
 def _basic_gate_check(session: int, project_dir: Path) -> list[dict]:
@@ -424,6 +453,46 @@ def cmd_grade(conn, args) -> int:
         else:
             print("No scores recorded yet.")
 
+    return 0
+
+
+def cmd_unlock_session(conn, args) -> int:
+    """Instructor override: force-unlock a session for a student."""
+    session = args.session
+    student_id = args.student
+    reason = args.reason
+
+    if not 1 <= session <= TOTAL_SESSIONS:
+        print(f"Error: Session must be between 1 and {TOTAL_SESSIONS}")
+        return 1
+
+    student = db.get_student(conn, student_id)
+    if not student:
+        print(f"Error: Student '{student_id}' not found")
+        return 1
+
+    # Mark the previous session as passed (so the target session unlocks)
+    if session > 1:
+        prev = session - 1
+        gate_details = {
+            "checks": [],
+            "total_points": 0,
+            "max_points": 0,
+            "override": True,
+            "reason": reason,
+        }
+        # Ensure previous session has a start record
+        db.start_session(conn, student_id, prev)
+        db.complete_session(conn, student_id, prev, True, gate_details)
+        print(f"  Session {prev} force-completed for {student['name']}")
+
+    # Also start the target session
+    db.start_session(conn, student_id, session)
+    print(f"  Session {session} unlocked for {student['name']}")
+    print(f"  Reason: {reason}")
+    print(f"\n  Note: Override recorded in gate_details. Score will reflect")
+    print(f"  0 points for skipped gate checks. Student can still retry")
+    print(f"  './bootcamp complete-session {session - 1}' for a real score.")
     return 0
 
 
