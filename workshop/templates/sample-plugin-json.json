@@ -1,0 +1,35 @@
+{
+  "_comment": "TEMPLATE: Example .claude-plugin/plugin.json manifest",
+  "_note": "Students should create their own plugin, not copy this directly",
+  "name": "qa-toolkit",
+  "version": "1.0.0",
+  "description": "QA automation toolkit for Claude Code",
+  "commands": [
+    "commands/new-test-case.md",
+    "commands/bug-report.md"
+  ],
+  "agents": [
+    "agents/test-writer.md",
+    "agents/bug-triager.md",
+    "agents/security-scanner.md"
+  ],
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "hooks/validate-filename.sh"
+          }
+        ]
+      }
+    ]
+  },
+  "mcp": {
+    "github": {
+      "command": "npx",
+      "args": ["@modelcontextprotocol/server-github"]
+    }
+  }
+}

@@ -1,0 +1,13 @@
+#!/usr/bin/env python3
+"""AI Bootcamp CLI entry point."""
+
+import sys
+from pathlib import Path
+
+# Add workshop directory to Python path
+workshop_dir = Path(__file__).parent
+sys.path.insert(0, str(workshop_dir.parent))
+
+from workshop.platform.cli import main
+
+sys.exit(main())

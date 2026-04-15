@@ -87,3 +87,8 @@ promo-video/
 *.mp4
 
 update-plan*.md
+
+# Workshop platform data (generated at runtime)
+workshop/*.db
+workshop/logs/
+.claude-bootcamp/
